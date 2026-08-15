@@ -12,7 +12,11 @@ import multer from "multer";
 import fs from "fs";
 import crypto from "crypto";
 import compression from "compression";
+import dns from "dns";
 import { db } from "./db.js";
+
+// Force IPv4 resolution for node < 20 or when AutoDNS tries IPv6 first (fixes ENETUNREACH for SMTP)
+dns.setDefaultResultOrder('ipv4first');
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
