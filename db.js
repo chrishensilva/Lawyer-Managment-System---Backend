@@ -2,9 +2,13 @@ import pg from "pg";
 import dotenv from "dotenv";
 
 import { createRequire } from 'module';
+import { fileURLToPath } from 'url';
+import path from 'path';
+
 const require = createRequire(import.meta.url);
-const envPath = new URL('../.env', import.meta.url).pathname.replace(/^\/([A-Z]:)/, '$1');
-dotenv.config({ path: envPath });
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 const isRemote = process.env.DB_HOST && process.env.DB_HOST !== "localhost";
 
