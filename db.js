@@ -1,57 +1,70 @@
-import pg from "pg";
 import dotenv from "dotenv";
-
-import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
 import path from 'path';
+import { firestoreDb } from "./firestore_db.js";
 
-const require = createRequire(import.meta.url);
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
-const isRemote = process.env.DB_HOST && process.env.DB_HOST !== "localhost";
+const useFirestore = process.env.USE_FIRESTORE !== "false";
 
-console.log("=== DB CONFIG ===");
-console.log("HOST:", process.env.DB_HOST);
-console.log("USER:", process.env.DB_USER);
-console.log("PORT:", process.env.DB_PORT);
-console.log("NAME:", process.env.DB_NAME);
-console.log("PASSWORD SET:", process.env.DB_PASSWORD ? "YES" : "NO");
-console.log("SSL:", isRemote ? "ENABLED" : "DISABLED");
-console.log("=================");
+let pool = null;
 
-const { Pool } = pg;
+if (!useFirestore) {
+  const isRemote = process.env.DB_HOST && process.env.DB_HOST !== "localhost";
+  console.log("=== SQL DB CONFIG ===");
+  console.log("HOST:", process.env.DB_HOST);
+  console.log("USER:", process.env.DB_USER);
+  console.log("PORT:", process.env.DB_PORT);
+  console.log("NAME:", process.env.DB_NAME);
+  console.log("=====================");
 
-export const pool = new Pool({
-  host: process.env.DB_HOST || "localhost",
-  user: process.env.DB_USER || "postgres",
-  password: process.env.DB_PASSWORD || "postgres",
-  database: process.env.DB_NAME || "userdb",
-  port: parseInt(process.env.DB_PORT) || 5432,
-  ssl: isRemote ? { rejectUnauthorized: false } : undefined,
-});
+  const { default: pg } = await import("pg");
+  pool = new pg.Pool({
+    host: process.env.DB_HOST || "localhost",
+    user: process.env.DB_USER || "postgres",
+    password: process.env.DB_PASSWORD || "postgres",
+    database: process.env.DB_NAME || "userdb",
+    port: parseInt(process.env.DB_PORT) || 5432,
+    ssl: isRemote ? { rejectUnauthorized: false } : undefined,
+  });
+} else {
+  console.log("=== FIRESTORE DB ACTIVE ===");
+  console.log("PROJECT:", process.env.FIREBASE_PROJECT_ID || "lawyer-managment-system-84847");
+  console.log("DATABASE: Cloud Firestore");
+  console.log("===========================");
+}
 
-// Compatibility wrapper for MySQL-style queries
+export { pool };
+
 export const db = {
   query: (text, params, callback) => {
     if (typeof params === 'function') {
       callback = params;
       params = [];
     }
-    
-    // Convert ? to $1, $2, etc.
+
+    if (useFirestore) {
+      firestoreDb.execute(text, params)
+        .then(result => {
+          if (callback) callback(null, result);
+        })
+        .catch(err => {
+          console.error("[Firestore Query Error]:", err);
+          if (callback) callback(err);
+        });
+      return;
+    }
+
+    // Fallback: PostgreSQL pool
     let index = 1;
     const pgText = text.replace(/\?/g, () => `$${index++}`);
-    
-    // Log query for debugging (optional, can be removed later)
-    // console.log("[DB Query]:", pgText, params);
 
     return pool.query(pgText, params, (err, res) => {
       if (callback) {
         let result = res ? res.rows : [];
         if (res) {
-          // Add MySQL-style properties for compatibility
           result.affectedRows = res.rowCount || 0;
           result.insertId = (res.rows && res.rows[0]) ? res.rows[0].id : null;
         }
@@ -59,24 +72,31 @@ export const db = {
       }
     });
   },
+
   getConnection: (callback) => {
+    if (useFirestore) {
+      const connection = {
+        query: (text, params, cb) => db.query(text, params, cb),
+        release: () => {}
+      };
+      return callback(null, connection);
+    }
+
     pool.connect((err, client, done) => {
       if (err) return callback(err);
-      
-      // Wrap client to match mysql2 connection
       const connection = {
         query: (text, params, cb) => {
-            let index = 1;
-            const pgText = text.replace(/\?/g, () => `$${index++}`);
-            return client.query(pgText, params, (err, res) => {
-                if (cb) {
-                    const result = res ? res.rows : null;
-                    if (result && res.rowCount !== undefined) {
-                      result.affectedRows = res.rowCount;
-                    }
-                    cb(err, result);
-                }
-            });
+          let index = 1;
+          const pgText = text.replace(/\?/g, () => `$${index++}`);
+          return client.query(pgText, params, (err, res) => {
+            if (cb) {
+              const result = res ? res.rows : null;
+              if (result && res.rowCount !== undefined) {
+                result.affectedRows = res.rowCount;
+              }
+              cb(err, result);
+            }
+          });
         },
         release: () => done()
       };
@@ -84,4 +104,3 @@ export const db = {
     });
   }
 };
-

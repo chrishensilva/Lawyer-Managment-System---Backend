@@ -3,6 +3,9 @@ node_modules/
 
 # Local env files
 .env
+*serviceAccount*.json
+*.key.json
+serviceAccountKey.json
 
 # SQLite
 *.sqlite

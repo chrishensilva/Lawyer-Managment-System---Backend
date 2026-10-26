@@ -777,10 +777,11 @@ app.get('/api/dashboard_counts', authenticateToken, (req, res) => {
     `;
   db.query(sql, [userId, userId, userId], (err, results) => {
     if (err) return res.status(500).json({ status: 'error', message: err.message });
+    const row = results[0] || {};
     res.json({
-      totalClients: results[0].totalClients,
-      totalLawyers: results[0].totalLawyers,
-      totalCases: results[0].totalCases
+      totalClients: parseInt(row.totalClients || row.totalclients || 0, 10),
+      totalLawyers: parseInt(row.totalLawyers || row.totallawyers || 0, 10),
+      totalCases: parseInt(row.totalCases || row.totalcases || 0, 10)
     });
   });
 });
